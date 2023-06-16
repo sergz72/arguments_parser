@@ -273,6 +273,10 @@ impl<'a> Arguments<'a> {
         }
         Ok(())
     }
+
+    pub fn get_other_arguments(&self) -> &Vec<String> {
+        &self.other_arguments
+    }
 }
 
 #[cfg(test)]
@@ -299,11 +303,13 @@ mod tests {
             "-m".to_string(), "1M".to_string(),
             "-t".to_string(), "12".to_string(),
             "-v".to_string(),
-            "-s".to_string(), "test".to_string()]).is_ok());
+            "-s".to_string(), "test".to_string(),
+            "arg1".to_string(), "arg2".to_string()]).is_ok());
         assert_eq!(3333, port_parameter.get_value());
         assert_eq!(1024 * 1024, max_memory_parameter.get_value());
         assert_eq!(12, threads_parameter.get_value());
         assert_eq!(true, verbose_parameter.get_value());
         assert_eq!("test", string_parameter.get_value());
+        assert_eq!(vec!["arg1".to_string(), "arg2".to_string()], arguments.get_other_arguments().clone());
     }
 }
