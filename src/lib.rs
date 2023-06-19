@@ -143,11 +143,11 @@ pub struct Switch<'a> {
 }
 
 impl<'a> Switch<'a> {
-    pub fn new(name: &str, switch: Option<char>, ext_switch: Option<String>, handler: &'a dyn ValueHandler) -> Switch<'a> {
+    pub fn new(name: &str, switch: Option<char>, ext_switch: Option<&str>, handler: &'a dyn ValueHandler) -> Switch<'a> {
         Switch {
             name: name.to_string(),
             switch,
-            ext_switch,
+            ext_switch: ext_switch.map(|s|s.to_string()),
             handler,
         }
     }
@@ -295,7 +295,7 @@ mod tests {
             Switch::new("maximum_memory", Some('m'), None, &max_memory_parameter),
             Switch::new("threads", Some('t'), None, &threads_parameter),
             Switch::new("verbose", Some('v'), None, &verbose_parameter),
-            Switch::new("test", Some('s'), None, &string_parameter),
+            Switch::new("test", None, Some("ss"), &string_parameter),
         ];
         let mut arguments = Arguments::new("cache", &switches);
         assert!(arguments.build(vec![
@@ -303,7 +303,7 @@ mod tests {
             "-m".to_string(), "1M".to_string(),
             "-t".to_string(), "12".to_string(),
             "-v".to_string(),
-            "-s".to_string(), "test".to_string(),
+            "--ss".to_string(), "test".to_string(),
             "arg1".to_string(), "arg2".to_string()]).is_ok());
         assert_eq!(3333, port_parameter.get_value());
         assert_eq!(1024 * 1024, max_memory_parameter.get_value());
