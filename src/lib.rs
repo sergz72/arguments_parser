@@ -1,5 +1,5 @@
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{Error, ErrorKind};
 use std::str::FromStr;
 
@@ -7,7 +7,7 @@ pub trait ValueHandler {
     fn parse_value(&self, value: &str) -> Result<(), Error>;
     fn requires_value(&self) -> bool;
     fn set_value(&self);
-    fn value_type(&self) -> &str;
+    fn value_type(&self) -> String;
 }
 
 pub struct IntParameter {
@@ -37,8 +37,8 @@ impl ValueHandler for IntParameter {
     fn set_value(&self) {
     }
 
-    fn value_type(&self) -> &str {
-        return " int"
+    fn value_type(&self) -> String {
+        return " int".to_string()
     }
 }
 
@@ -69,8 +69,55 @@ impl ValueHandler for StringParameter {
     fn set_value(&self) {
     }
 
-    fn value_type(&self) -> &str {
-        return " string"
+    fn value_type(&self) -> String {
+        return " string".to_string()
+    }
+}
+
+pub struct EnumParameter {
+    values: HashSet<String>,
+    value: RefCell<String>,
+}
+
+impl EnumParameter {
+    pub fn new(values: Vec<String>, value: &str) -> EnumParameter {
+        EnumParameter { values: values.into_iter().collect(), value: RefCell::new(value.to_string()) }
+    }
+
+    pub fn get_value(&self) -> String {
+        self.value.borrow().clone()
+    }
+}
+
+impl ValueHandler for EnumParameter {
+    fn parse_value(&self, value: &str) -> Result<(), Error> {
+        if self.values.contains(value) {
+            *self.value.borrow_mut() = value.to_string();
+            Ok(())
+        } else {
+            Err(Error::new(ErrorKind::InvalidInput, "unknown value"))
+        }
+    }
+
+    fn requires_value(&self) -> bool {
+        return true;
+    }
+
+    fn set_value(&self) {
+    }
+
+    fn value_type(&self) -> String {
+        let mut t = " ".to_string();
+        let mut first = true;
+        for v in &self.values {
+            if first {
+                first = false;
+            } else {
+                t.push('|');
+            }
+            t.push_str(v.as_str());
+        }
+        return t
     }
 }
 
@@ -101,8 +148,8 @@ impl ValueHandler for BoolParameter {
         self.value.set(true);
     }
 
-    fn value_type(&self) -> &str {
-        return ""
+    fn value_type(&self) -> String {
+        return "".to_string()
     }
 }
 
@@ -146,8 +193,8 @@ impl ValueHandler for SizeParameter {
     fn set_value(&self) {
     }
 
-    fn value_type(&self) -> &str {
-        return " size"
+    fn value_type(&self) -> String {
+        return " size".to_string()
     }
 }
 
@@ -179,7 +226,7 @@ impl<'a> Switch<'a> {
         } else if let Some(sw) = &self.ext_switch {
             result.push_str(format!(" --{}", sw).as_str());
         }
-        result.push_str(self.handler.value_type());
+        result.push_str(self.handler.value_type().as_str());
         result.push_str(" - ");
         result.push_str(self.name.as_str());
         result
@@ -306,7 +353,7 @@ impl<'a> Arguments<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Arguments, BoolParameter, IntParameter, SizeParameter, StringParameter, Switch};
+    use crate::{Arguments, BoolParameter, EnumParameter, IntParameter, SizeParameter, StringParameter, Switch};
 
     #[test]
     fn test_arguments_parser() {
@@ -315,12 +362,14 @@ mod tests {
         let threads_parameter = IntParameter::new(4);
         let verbose_parameter = BoolParameter::new();
         let string_parameter = StringParameter::new("init");
+        let enum_parameter = EnumParameter::new(vec!["value".to_string()], "init");
         let switches = [
             Switch::new("port", Some('p'), None, &port_parameter),
             Switch::new("maximum_memory", Some('m'), None, &max_memory_parameter),
             Switch::new("threads", Some('t'), None, &threads_parameter),
             Switch::new("verbose", Some('v'), None, &verbose_parameter),
             Switch::new("test", None, Some("ss"), &string_parameter),
+            Switch::new("test_enum", Some('e'), None, &enum_parameter),
         ];
         let mut arguments = Arguments::new("cache", &switches,
                                            Some(vec!["arg1".to_string(), "arg2".to_string()]));
@@ -330,12 +379,14 @@ mod tests {
             "-t".to_string(), "12".to_string(),
             "-v".to_string(),
             "--ss".to_string(), "test".to_string(),
+            "-e".to_string(), "value".to_string(),
             "arg1".to_string(), "arg2".to_string()]).is_ok());
         assert_eq!(3333, port_parameter.get_value());
         assert_eq!(1024 * 1024, max_memory_parameter.get_value());
         assert_eq!(12, threads_parameter.get_value());
         assert_eq!(true, verbose_parameter.get_value());
         assert_eq!("test", string_parameter.get_value());
+        assert_eq!("value", enum_parameter.get_value());
         assert_eq!(vec!["arg1".to_string(), "arg2".to_string()], arguments.get_other_arguments().clone());
     }
 }
