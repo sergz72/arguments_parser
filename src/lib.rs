@@ -4,7 +4,7 @@ use std::io::{Error, ErrorKind};
 use std::str::FromStr;
 
 pub trait ValueHandler {
-    fn parse_value(&self, value: &str) -> Result<(), Error>;
+    fn parse_value(&self, value: &str) -> bool;
     fn requires_value(&self) -> bool;
     fn set_value(&self);
     fn value_type(&self) -> String;
@@ -12,11 +12,12 @@ pub trait ValueHandler {
 
 pub struct IntParameter {
     value: Cell<isize>,
+    validator: fn(isize) -> bool
 }
 
 impl IntParameter {
-    pub fn new(value: isize) -> IntParameter {
-        IntParameter { value: Cell::new(value) }
+    pub fn new(value: isize, validator: fn(isize) -> bool) -> IntParameter {
+        IntParameter { validator, value: Cell::new(value) }
     }
 
     pub fn get_value(&self) -> isize {
@@ -25,9 +26,14 @@ impl IntParameter {
 }
 
 impl ValueHandler for IntParameter {
-    fn parse_value(&self, value: &str) -> Result<(), Error> {
-        self.value.set(isize::from_str(value).map_err(|e| Error::new(ErrorKind::InvalidInput, e))?);
-        Ok(())
+    fn parse_value(&self, value: &str) -> bool {
+        if let Ok(v) = isize::from_str(value).map_err(|e| Error::new(ErrorKind::InvalidInput, e)) {
+            if (self.validator)(v) {
+                self.value.set(v);
+                return true;
+            }
+        }
+        false
     }
 
     fn requires_value(&self) -> bool {
@@ -57,9 +63,9 @@ impl StringParameter {
 }
 
 impl ValueHandler for StringParameter {
-    fn parse_value(&self, value: &str) -> Result<(), Error> {
+    fn parse_value(&self, value: &str) -> bool {
         *self.value.borrow_mut() = value.to_string();
-        Ok(())
+        true
     }
 
     fn requires_value(&self) -> bool {
@@ -90,12 +96,12 @@ impl EnumParameter {
 }
 
 impl ValueHandler for EnumParameter {
-    fn parse_value(&self, value: &str) -> Result<(), Error> {
+    fn parse_value(&self, value: &str) -> bool {
         if self.values.contains(value) {
             *self.value.borrow_mut() = value.to_string();
-            Ok(())
+            true
         } else {
-            Err(Error::new(ErrorKind::InvalidInput, "unknown value"))
+            false
         }
     }
 
@@ -136,8 +142,9 @@ impl BoolParameter {
 }
 
 impl ValueHandler for BoolParameter {
-    fn parse_value(&self, _value: &str) -> Result<(), Error> {
-        Err(Error::new(ErrorKind::Unsupported, "should not be called"))
+    fn parse_value(&self, _value: &str) -> bool {
+        // should not be called
+        false
     }
 
     fn requires_value(&self) -> bool {
@@ -155,11 +162,12 @@ impl ValueHandler for BoolParameter {
 
 pub struct SizeParameter {
     value: Cell<isize>,
+    validator: fn(isize) -> bool
 }
 
 impl SizeParameter {
-    pub fn new(value: isize) -> SizeParameter {
-        SizeParameter { value: Cell::new(value) }
+    pub fn new(value: isize, validator: fn(isize) -> bool) -> SizeParameter {
+        SizeParameter { value: Cell::new(value), validator }
     }
 
     pub fn get_value(&self) -> isize {
@@ -168,22 +176,30 @@ impl SizeParameter {
 }
 
 impl ValueHandler for SizeParameter {
-    fn parse_value(&self, value: &str) -> Result<(), Error> {
-        let multiplier = match value.chars().last().ok_or(Error::new(ErrorKind::InvalidInput, "invalid size parameter"))? {
+    fn parse_value(&self, value: &str) -> bool {
+        if value.len() == 0 {
+            return false
+        }
+        let multiplier = match value.chars().last().unwrap() {
             'M' => 1024 * 1024,
             'K' => 1024,
             'G' => 1024 * 1024 * 1024,
             _ => 1
         };
-        let size = if multiplier == 1 {
-            isize::from_str(value).map_err(|e| Error::new(ErrorKind::InvalidInput, e))?
+        if let Ok(size) = if multiplier == 1 {
+            isize::from_str(value)
         } else {
             let mut chars = value.chars();
             chars.next_back();
-            isize::from_str(chars.as_str()).map_err(|e| Error::new(ErrorKind::InvalidInput, e))?
-        };
-        self.value.set(size * multiplier);
-        Ok(())
+            isize::from_str(chars.as_str())
+        } {
+            let msize = size * multiplier;
+            if (self.validator)(msize) {
+                self.value.set(msize);
+                return true;
+            }
+        }
+        false
     }
 
     fn requires_value(&self) -> bool {
@@ -232,9 +248,8 @@ impl<'a> Switch<'a> {
         result
     }
 
-    fn parse_value(&self, value: &str) -> Result<(), Error> {
-        self.handler.parse_value(value)?;
-        Ok(())
+    fn parse_value(&self, value: &str) -> bool {
+        self.handler.parse_value(value)
     }
 
     fn requires_value(&self) -> bool {
@@ -299,7 +314,10 @@ impl<'a> Arguments<'a> {
         let mut current_parameter: Option<&Switch> = None;
         for arg in args {
             if let Some(p) = current_parameter {
-                p.parse_value(arg.as_str())?;
+                if !p.parse_value(arg.as_str()) {
+                   return Err(Error::new(ErrorKind::InvalidInput,
+                                            format!("invalid {} value", p.name)))?;
+                }
                 current_parameter = None;
             } else {
                 if arg.starts_with('-') {
@@ -357,9 +375,9 @@ mod tests {
 
     #[test]
     fn test_arguments_parser() {
-        let port_parameter = IntParameter::new(6379);
-        let max_memory_parameter = SizeParameter::new(1024 * 1024 * 1024);//1G
-        let threads_parameter = IntParameter::new(4);
+        let port_parameter = IntParameter::new(6379, |v|v>0);
+        let max_memory_parameter = SizeParameter::new(1024 * 1024 * 1024, |v|v>0);//1G
+        let threads_parameter = IntParameter::new(4, |v|v>0);
         let verbose_parameter = BoolParameter::new();
         let string_parameter = StringParameter::new("init");
         let enum_parameter = EnumParameter::new(vec!["value".to_string()], "init");
@@ -373,14 +391,15 @@ mod tests {
         ];
         let mut arguments = Arguments::new("cache", &switches,
                                            Some(vec!["arg1".to_string(), "arg2".to_string()]));
-        assert!(arguments.build(vec![
+        let result = arguments.build(vec![
             "-p".to_string(), "3333".to_string(),
             "-m".to_string(), "1M".to_string(),
             "-t".to_string(), "12".to_string(),
             "-v".to_string(),
             "--ss".to_string(), "test".to_string(),
             "-e".to_string(), "value".to_string(),
-            "arg1".to_string(), "arg2".to_string()]).is_ok());
+            "arg1".to_string(), "arg2".to_string()]);
+        assert!(result.is_ok(), "{}", result.err().map(|e|e.to_string()).unwrap_or("".to_string()));
         assert_eq!(3333, port_parameter.get_value());
         assert_eq!(1024 * 1024, max_memory_parameter.get_value());
         assert_eq!(12, threads_parameter.get_value());
