@@ -7,6 +7,7 @@ pub trait ValueHandler {
     fn parse_value(&self, value: &str) -> Result<(), Error>;
     fn requires_value(&self) -> bool;
     fn set_value(&self);
+    fn value_type(&self) -> &str;
 }
 
 pub struct IntParameter {
@@ -34,6 +35,10 @@ impl ValueHandler for IntParameter {
     }
 
     fn set_value(&self) {
+    }
+
+    fn value_type(&self) -> &str {
+        return " int"
     }
 }
 
@@ -63,6 +68,10 @@ impl ValueHandler for StringParameter {
 
     fn set_value(&self) {
     }
+
+    fn value_type(&self) -> &str {
+        return " string"
+    }
 }
 
 pub struct BoolParameter {
@@ -90,6 +99,10 @@ impl ValueHandler for BoolParameter {
 
     fn set_value(&self) {
         self.value.set(true);
+    }
+
+    fn value_type(&self) -> &str {
+        return ""
     }
 }
 
@@ -132,6 +145,10 @@ impl ValueHandler for SizeParameter {
 
     fn set_value(&self) {
     }
+
+    fn value_type(&self) -> &str {
+        return " size"
+    }
 }
 
 #[derive(Clone)]
@@ -154,24 +171,17 @@ impl<'a> Switch<'a> {
 
     fn to_string(&self) -> String {
         let mut result = "".to_string();
-        if self.handler.requires_value() {
-            if let Some(sw) = self.switch {
-                result.push_str(format!(" -{} {}", sw, self.name).as_str());
-            }
+        if let Some(sw) = self.switch {
+            result.push_str(format!(" -{}", sw).as_str());
             if let Some(sw) = &self.ext_switch {
-                result.push_str(format!(" --{} {}", sw, self.name).as_str());
+                result.push_str(format!(" (or --{})", sw).as_str());
             }
-        } else {
-            if let Some(sw) = self.switch {
-                result.push_str(format!(" -{}", sw).as_str());
-            }
-            if let Some(sw) = &self.ext_switch {
-                result.push_str(format!(" --{}", sw).as_str());
-            }
+        } else if let Some(sw) = &self.ext_switch {
+            result.push_str(format!(" --{}", sw).as_str());
         }
-        if result.len() == 0 {
-            return self.name.clone();
-        }
+        result.push_str(self.handler.value_type());
+        result.push_str(" - ");
+        result.push_str(self.name.as_str());
         result
     }
 
@@ -221,16 +231,19 @@ impl<'a> Arguments<'a> {
     pub fn usage(&self) {
         let mut usage = "Usage: ".to_string();
         usage.push_str(&self.program_name);
-        for (_name, sw) in &self.switch_map {
-            usage.push_str(sw.to_string().as_str())
-        }
-        for (_name, sw) in &self.ext_switch_map {
-            usage.push_str(sw.to_string().as_str())
-        }
         if let Some(other_argument_names) = self.other_argument_names.as_ref() {
             for name in other_argument_names {
                 usage.push_str((" ".to_string() + name.as_str()).as_str())
             }
+        }
+        usage.push('\n');
+        for (_name, sw) in &self.switch_map {
+            usage.push_str(sw.to_string().as_str());
+            usage.push('\n');
+        }
+        for (_name, sw) in &self.ext_switch_map {
+            usage.push_str(sw.to_string().as_str());
+            usage.push('\n');
         }
         println!("{}", usage);
     }
