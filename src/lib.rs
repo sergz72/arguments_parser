@@ -194,10 +194,11 @@ pub struct Arguments<'a> {
     switch_map: HashMap<char, Switch<'a>>,
     ext_switch_map: HashMap<String, Switch<'a>>,
     other_arguments: Vec<String>,
+    other_argument_names: Option<Vec<String>>,
 }
 
 impl<'a> Arguments<'a> {
-    pub fn new(program_name: &str, switches: &[Switch<'a>]) -> Arguments<'a> {
+    pub fn new(program_name: &str, switches: &[Switch<'a>], other_argument_names: Option<Vec<String>>) -> Arguments<'a> {
         let mut switch_map = HashMap::new();
         let mut ext_switch_map = HashMap::new();
         for switch in switches {
@@ -213,6 +214,7 @@ impl<'a> Arguments<'a> {
             switch_map,
             ext_switch_map,
             other_arguments: Vec::new(),
+            other_argument_names
         }
     }
 
@@ -224,6 +226,11 @@ impl<'a> Arguments<'a> {
         }
         for (_name, sw) in &self.ext_switch_map {
             usage.push_str(sw.to_string().as_str())
+        }
+        if let Some(other_argument_names) = self.other_argument_names.as_ref() {
+            for name in other_argument_names {
+                usage.push_str((" ".to_string() + name.as_str()).as_str())
+            }
         }
         println!("{}", usage);
     }
@@ -271,6 +278,11 @@ impl<'a> Arguments<'a> {
         if current_parameter.is_some() {
             return Err(Error::new(ErrorKind::InvalidInput, "switch value expected"));
         }
+        if let Some(other_argument_names) = self.other_argument_names.as_ref() {
+            if other_argument_names.len() != self.other_arguments.len() {
+                return Err(Error::new(ErrorKind::InvalidInput, "incorrect number of arguments"));
+            }
+        }
         Ok(())
     }
 
@@ -297,7 +309,8 @@ mod tests {
             Switch::new("verbose", Some('v'), None, &verbose_parameter),
             Switch::new("test", None, Some("ss"), &string_parameter),
         ];
-        let mut arguments = Arguments::new("cache", &switches);
+        let mut arguments = Arguments::new("cache", &switches,
+                                           Some(vec!["arg1".to_string(), "arg2".to_string()]));
         assert!(arguments.build(vec![
             "-p".to_string(), "3333".to_string(),
             "-m".to_string(), "1M".to_string(),
